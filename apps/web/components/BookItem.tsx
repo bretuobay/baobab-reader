@@ -9,9 +9,20 @@ interface BookItemProps {
 }
 
 const BookItem: React.FC<BookItemProps> = ({ book, onEdit, onDelete }) => {
+  let syncStatusIndicator = '';
+  if (book.syncStatus === 'synced') {
+    syncStatusIndicator = ' [Synced]';
+  } else if (book.syncStatus === 'pending') {
+    syncStatusIndicator = ' [Pending]';
+  } else if (book.syncStatus === 'error') {
+    syncStatusIndicator = ' [Error]';
+  } else if (!book.syncStatus) {
+    syncStatusIndicator = ' [Local]'; // For books without the status yet
+  }
+
   return (
     <div style={{ border: '1px solid #ccc', margin: '10px', padding: '10px' }}>
-      <h3>{book.title || 'No Title'}</h3>
+      <h3>{book.title || 'No Title'}{syncStatusIndicator}</h3>
       <p><strong>Author:</strong> {book.author || 'N/A'}</p>
       <p><strong>Filename:</strong> {book.filename}</p>
       {book.tags && book.tags.length > 0 && (
