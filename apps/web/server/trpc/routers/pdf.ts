@@ -65,8 +65,28 @@ export const pdfRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const metadata = await parsePdfMetadata(input.data, input.filename);
-      const result = await insertPdfMetadata(metadata);
+      let metadata: Omit<PdfMetadata, "id" | "uploadedAt">;
+      let result = { id: 0 };
+      try {
+        metadata = await parsePdfMetadata(input.data, input.filename);
+      } catch (error) {
+        console.error(
+          `Error parsing PDF metadata for ${input.filename}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        throw new Error("Failed to parse PDF metadata");
+      }
+
+      try {
+        result = await insertPdfMetadata(metadata);
+      } catch (error) {
+        console.error(
+          `Error inserting PDF metadata for ${input.filename}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
       return { success: true, id: result.id, filename: input.filename };
     }),
 
