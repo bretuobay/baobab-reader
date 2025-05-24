@@ -1,20 +1,20 @@
-import Dexie, { type Table } from 'dexie';
+import Dexie, { type Table } from "dexie";
 // Adjust path if Ebook/EbookRepository are moved to a shared location
-import { type Ebook, type EbookRepository } from '../server/db'; 
-import { v4 as uuidv4 } from 'uuid';
-import { trpc } from '../utils/trpc'; 
+import { type Ebook, type EbookRepository } from "../server/db";
+import { v4 as uuidv4 } from "uuid";
+import { trpcClient } from "../utils/trpc";
 
 // Define the Dexie database
 class EbookDB extends Dexie {
   ebooks!: Table<Ebook, string>; // Primary key is string (UUID)
 
   constructor() {
-    super('EbookDB');
+    super("EbookDB");
     this.version(1).stores({
       // 'id' is the primary key.
       // Indexing 'filename', 'title', 'author'.
       // For 'tags', use a multiEntry index by prefixing with '*'
-      ebooks: 'id, filename, title, author, *tags', 
+      ebooks: "id, filename, title, author, *tags",
     });
   }
 }
@@ -40,21 +40,22 @@ class DexieEbookRepository implements EbookRepository {
     }
 
     // Set syncStatus to pending before saving
-    ebook.syncStatus = 'pending';
+    ebook.syncStatus = "pending";
 
     // Save to IndexedDB
     await db.ebooks.put(ebook);
 
     // Trigger the sync attempt (don't wait for it to complete here)
-    if (ebook.id) { // Ensure ebook.id is defined before calling
-       attemptSyncBook(ebook.id).catch(error => {
-           console.error(`Error triggering sync for book ${ebook.id}:`, error);
-           // Optionally, update the book's status to 'error' here if the trigger itself fails,
-           // though the main error handling will be within attemptSyncBook
-       });
+    if (ebook.id) {
+      // Ensure ebook.id is defined before calling
+      attemptSyncBook(ebook.id).catch((error) => {
+        console.error(`Error triggering sync for book ${ebook.id}:`, error);
+        // Optionally, update the book's status to 'error' here if the trigger itself fails,
+        // though the main error handling will be within attemptSyncBook
+      });
     }
-    
-    return ebook; 
+
+    return ebook;
   }
 
   async delete(id: string): Promise<void> {
@@ -63,7 +64,7 @@ class DexieEbookRepository implements EbookRepository {
 
   async getByFilename(filename: string): Promise<Ebook | null> {
     // Dexie's .get() method on a WhereClause returns the first match or undefined.
-    const ebook = await db.ebooks.where('filename').equals(filename).first();
+    const ebook = await db.ebooks.where("filename").equals(filename).first();
     return ebook || null; // Return null if undefined
   }
 }
@@ -88,31 +89,36 @@ export async function attemptSyncBook(bookId: string): Promise<void> {
   }
 
   try {
-    // Assume the tRPC mutation will be named 'syncBookToSqlite' 
+    // Assume the tRPC mutation will be named 'syncBookToSqlite'
     // and will be part of the 'pdf' router.
     // Adjust if the router/procedure names are different.
-    const syncedBook = await trpc.pdf.syncBookToSqlite.mutate(bookToSync);
+    // const syncedBook = await trpc.pdf.syncBookToSqlite.mutate(bookToSync);
+    const syncedBook = await trpcClient.pdf.syncBookToSqlite.mutate(bookToSync);
 
     // Update book in IndexedDB with 'synced' status and sqliteId
-    await db.ebooks.update(bookId, { 
-      syncStatus: 'synced', 
+    await db.ebooks.update(bookId, {
+      syncStatus: "synced",
       sqliteId: syncedBook.sqliteId, // Assuming the mutation returns an object with sqliteId
       // Also update any other fields that the server might have changed/canonicalized
       title: syncedBook.title,
       author: syncedBook.author,
       metadata: syncedBook.metadata,
       // filename should ideally not change, but good to be thorough if server can modify it
-      filename: syncedBook.filename, 
+      filename: syncedBook.filename,
     });
-    console.log(`Book ${bookId} synced successfully. SQLite ID: ${syncedBook.sqliteId}`);
-
+    console.log(
+      `Book ${bookId} synced successfully. SQLite ID: ${syncedBook.sqliteId}`
+    );
   } catch (error) {
     console.error(`Error syncing book ${bookId}:`, error);
     // Update book in IndexedDB with 'error' status
     try {
-      await db.ebooks.update(bookId, { syncStatus: 'error' });
+      await db.ebooks.update(bookId, { syncStatus: "error" });
     } catch (updateError) {
-      console.error(`Failed to update syncStatus to 'error' for book ${bookId}:`, updateError);
+      console.error(
+        `Failed to update syncStatus to 'error' for book ${bookId}:`,
+        updateError
+      );
     }
   }
 }
