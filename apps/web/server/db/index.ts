@@ -1,10 +1,10 @@
-import sqlite3 from 'sqlite3';
-import { open, type Database } from 'sqlite';
-import path from 'path';
+import sqlite3 from "sqlite3";
+import { open, type Database } from "sqlite";
+import path from "path";
 
 // Define the path to the database file
 // __dirname might not be available in all module systems, adjust if needed
-const DB_PATH = path.join(process.cwd(), 'server', 'db', 'database.sqlite');
+const DB_PATH = path.join(process.cwd(), "server", "db", "database.sqlite");
 
 // Ensure the directory exists (important for environments where the dir isn't pre-created)
 // This is a simplified check; in a real app, you might use fs.mkdirSync recursively
@@ -18,7 +18,8 @@ export interface Ebook {
   author: string | null;
   tags?: string[]; // Optional as per original Ebook interface
   filePath?: string; // Optional
-  metadata?: { // Nested metadata object
+  metadata?: {
+    // Nested metadata object
     subject?: string;
     keywords?: string[];
     pages?: number;
@@ -58,7 +59,6 @@ interface SqliteEbookRecord {
   pages?: number;
 }
 
-
 export async function getDb(): Promise<Database> {
   if (!dbInstance) {
     // Ensure the directory for the database exists
@@ -67,10 +67,12 @@ export async function getDb(): Promise<Database> {
     // In a more robust app, you'd use fs.mkdirSync(dir, { recursive: true })
     // but here we'll rely on the environment or assume it's creatable.
     try {
-      const fs = await import('fs/promises');
+      const fs = await import("fs/promises");
       await fs.mkdir(dir, { recursive: true });
     } catch (e) {
-      console.warn(`Could not create directory ${dir}, assuming it exists or db is in-memory. Error: ${e}`);
+      console.warn(
+        `Could not create directory ${dir}, assuming it exists or db is in-memory. Error: ${e}`
+      );
     }
 
     dbInstance = await open({
@@ -88,6 +90,10 @@ export async function getDb(): Promise<Database> {
         creator TEXT,
         producer TEXT,
         creationDate TEXT,
+        subject TEXT,
+        keywords TEXT, -- Store keywords as a comma-separated string
+        pages INTEGER,
+        -- Optional metadata fields
         modificationDate TEXT,
         uploadedAt DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -95,7 +101,6 @@ export async function getDb(): Promise<Database> {
   }
   return dbInstance;
 }
-
 
 // Helper to map SQLite record to Ebook
 function sqliteToEbook(record: SqliteEbookRecord): Ebook {
@@ -110,7 +115,7 @@ function sqliteToEbook(record: SqliteEbookRecord): Ebook {
       creationDate: record.creationDate,
       modificationDate: record.modificationDate,
       subject: record.subject,
-      keywords: record.keywords ? record.keywords.split(',') : undefined,
+      keywords: record.keywords ? record.keywords.split(",") : undefined,
       pages: record.pages,
     },
     uploadedAt: record.uploadedAt,
@@ -118,7 +123,9 @@ function sqliteToEbook(record: SqliteEbookRecord): Ebook {
 }
 
 // Helper to map Ebook to SQLite record for insertion/update (omits id for insertion)
-function ebookToSqliteRecord(ebook: Ebook): Omit<SqliteEbookRecord, 'id' | 'uploadedAt'> {
+function ebookToSqliteRecord(
+  ebook: Ebook
+): Omit<SqliteEbookRecord, "id" | "uploadedAt"> {
   return {
     filename: ebook.filename,
     title: ebook.title,
@@ -128,11 +135,10 @@ function ebookToSqliteRecord(ebook: Ebook): Omit<SqliteEbookRecord, 'id' | 'uplo
     creationDate: ebook.metadata?.creationDate || null,
     modificationDate: ebook.metadata?.modificationDate || null,
     subject: ebook.metadata?.subject,
-    keywords: ebook.metadata?.keywords?.join(','),
+    keywords: ebook.metadata?.keywords?.join(","),
     pages: ebook.metadata?.pages,
   };
 }
-
 
 class SqliteEbookRepository implements EbookRepository {
   private db: Database;
@@ -142,23 +148,32 @@ class SqliteEbookRepository implements EbookRepository {
   }
 
   async getAll(): Promise<Ebook[]> {
-    const records = await this.db.all<SqliteEbookRecord[]>('SELECT * FROM pdf_metadata ORDER BY uploadedAt DESC');
+    const records = await this.db.all<SqliteEbookRecord[]>(
+      "SELECT * FROM pdf_metadata ORDER BY uploadedAt DESC"
+    );
     return records.map(sqliteToEbook);
   }
 
   async getById(id: string): Promise<Ebook | null> {
-    const record = await this.db.get<SqliteEbookRecord>('SELECT * FROM pdf_metadata WHERE id = ?', id);
+    const record = await this.db.get<SqliteEbookRecord>(
+      "SELECT * FROM pdf_metadata WHERE id = ?",
+      id
+    );
     return record ? sqliteToEbook(record) : null;
   }
 
   async getByFilename(filename: string): Promise<Ebook | null> {
-    const record = await this.db.get<SqliteEbookRecord>('SELECT * FROM pdf_metadata WHERE filename = ?', filename);
+    const record = await this.db.get<SqliteEbookRecord>(
+      "SELECT * FROM pdf_metadata WHERE filename = ?",
+      filename
+    );
     return record ? sqliteToEbook(record) : null;
   }
 
   async save(ebook: Ebook): Promise<Ebook> {
     const recordData = ebookToSqliteRecord(ebook);
-    if (ebook.id) { // Update existing record
+    if (ebook.id) {
+      // Update existing record
       const existingRecord = await this.getById(ebook.id);
       if (!existingRecord) {
         throw new Error(`Ebook with id ${ebook.id} not found`);
@@ -181,7 +196,8 @@ class SqliteEbookRepository implements EbookRepository {
         ebook.id
       );
       return { ...ebook }; // Return the updated ebook
-    } else { // Insert new record
+    } else {
+      // Insert new record
       const result = await this.db.run(
         `INSERT INTO pdf_metadata (
           filename, title, author, creator, producer, creationDate, modificationDate, subject, keywords, pages
@@ -211,7 +227,10 @@ class SqliteEbookRepository implements EbookRepository {
   }
 
   async delete(id: string): Promise<void> {
-    const result = await this.db.run('DELETE FROM pdf_metadata WHERE id = ?', id);
+    const result = await this.db.run(
+      "DELETE FROM pdf_metadata WHERE id = ?",
+      id
+    );
     if (result.changes === 0) {
       throw new Error(`Ebook with id ${id} not found for deletion.`);
     }
@@ -221,12 +240,14 @@ class SqliteEbookRepository implements EbookRepository {
 export async function getEbookRepository(): Promise<EbookRepository> {
   // For now, we only have a server-side (SQLite) implementation.
   // The tRPC router will use this. Client-side IndexedDB will be handled separately.
-  if (typeof window !== 'undefined') {
+  if (typeof window !== "undefined") {
     // This function is called from server-side tRPC context.
     // If it were to be called from client-side code that expects IndexedDB,
     // this would be the place to differentiate.
     // However, for this subtask, tRPC implies server-side.
-    console.warn("getEbookRepository called in a context that might expect client-side DB, but only SQLite is provided for now via server.");
+    console.warn(
+      "getEbookRepository called in a context that might expect client-side DB, but only SQLite is provided for now via server."
+    );
   }
   const db = await getDb();
   return new SqliteEbookRepository(db);
