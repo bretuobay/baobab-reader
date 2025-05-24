@@ -123,6 +123,68 @@ export const pdfRouter = router({
     const ebooks = await ebookRepo.getAll();
     return ebooks;
   }),
+
+  syncBookToSqlite: publicProcedure
+    .input(
+      z.object({
+        id: z.string(), // UUID from IndexedDB
+        title: z.string().nullable(),
+        author: z.string().nullable(),
+        filename: z.string(),
+        tags: z.array(z.string()).optional().nullable(), // Making nullable too for flexibility
+        filePath: z.string().optional().nullable(),
+        metadata: z
+          .object({
+            subject: z.string().optional().nullable(),
+            keywords: z.array(z.string()).optional().nullable(),
+            pages: z.number().optional().nullable(),
+            creator: z.string().optional().nullable(),
+            producer: z.string().optional().nullable(),
+            creationDate: z.string().optional().nullable(),
+            modificationDate: z.string().optional().nullable(),
+          })
+          .optional()
+          .nullable(),
+        uploadedAt: z.string().optional().nullable(), // ISO date string
+        lastReadPage: z.number().optional().nullable(),
+        sqliteId: z.number().optional().nullable(),
+        syncStatus: z
+          .enum(["synced", "pending", "error"])
+          .optional()
+          .nullable(),
+      })
+    ) // Use the Zod schema for input validation
+    .mutation(async ({ input }) => {
+      const ebookRepo = await getEbookRepository();
+      try {
+        // The input 'input' is an Ebook object from the client.
+        // The SqliteEbookRepository.save method is now designed to:
+        // - Use input.sqliteId for updates if available.
+        // - Use input.id (UUID) to check for existing records if sqliteId is not available.
+        // - Insert new record if no existing one is found.
+        // - It returns the Ebook object as it is in SQLite, with 'id' being the UUID
+        //   and 'sqliteId' being the SQLite primary key.
+
+        // Cast to Ebook as Zod's inferred type might be slightly different
+        const savedEbook = await ebookRepo.save(input as Ebook);
+
+        // The savedEbook should have the sqliteId populated by the save method.
+        // It will also have syncStatus: 'synced' due to the sqliteToEbook mapper.
+        return savedEbook;
+      } catch (error) {
+        console.error(
+          `Error syncing Ebook (ID: ${input.id}, SQLiteID: ${
+            input.sqliteId || "N/A"
+          }) to SQLite: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        // For now, rethrowing generic error. Consider TRPCError for more specific client feedback.
+        // import { TRPCError } from '@trpc/server';
+        // throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to sync book with database.' });
+        throw new Error("Failed to sync book with database.");
+      }
+    }),
 });
 
 export type PdfRouter = typeof pdfRouter;

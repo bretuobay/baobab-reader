@@ -31,6 +31,8 @@ export interface Ebook {
   filename: string; // From existing PdfMetadata
   uploadedAt?: string; // From existing PdfMetadata
   lastReadPage?: number; // Optional
+  syncStatus?: 'synced' | 'pending' | 'error';
+  sqliteId?: number | null;
 }
 
 export interface EbookRepository {
@@ -45,6 +47,7 @@ export interface EbookRepository {
 // Interface for the raw data structure in SQLite, closer to the original PdfMetadata
 interface SqliteEbookRecord {
   id: number; // SQLite uses auto-incrementing integer IDs
+  uuid: string | null; 
   filename: string;
   title: string | null;
   author: string | null;
@@ -84,6 +87,7 @@ export async function getDb(): Promise<Database> {
     await dbInstance.exec(`
       CREATE TABLE IF NOT EXISTS pdf_metadata (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        uuid TEXT UNIQUE,
         filename TEXT NOT NULL,
         title TEXT,
         author TEXT,
@@ -105,7 +109,8 @@ export async function getDb(): Promise<Database> {
 // Helper to map SQLite record to Ebook
 function sqliteToEbook(record: SqliteEbookRecord): Ebook {
   return {
-    id: record.id.toString(),
+    id: record.uuid || record.id.toString(), // Fallback for older data: use sqliteId as id if uuid is missing
+    sqliteId: record.id, // MAP SQLite PK to sqliteId
     filename: record.filename,
     title: record.title,
     author: record.author,
@@ -119,14 +124,16 @@ function sqliteToEbook(record: SqliteEbookRecord): Ebook {
       pages: record.pages,
     },
     uploadedAt: record.uploadedAt,
+    syncStatus: 'synced', // When fetching from SQLite, it's considered synced
   };
 }
 
 // Helper to map Ebook to SQLite record for insertion/update (omits id for insertion)
 function ebookToSqliteRecord(
   ebook: Ebook
-): Omit<SqliteEbookRecord, "id" | "uploadedAt"> {
+): Omit<SqliteEbookRecord, "id" | "uploadedAt" | "uuid"> & { uuid: string | null } { // Ensure uuid is part of the return type
   return {
+    uuid: ebook.id, // MAP Ebook.id to uuid
     filename: ebook.filename,
     title: ebook.title,
     author: ebook.author,
@@ -172,17 +179,34 @@ class SqliteEbookRepository implements EbookRepository {
 
   async save(ebook: Ebook): Promise<Ebook> {
     const recordData = ebookToSqliteRecord(ebook);
-    if (ebook.id) {
-      // Update existing record
-      const existingRecord = await this.getById(ebook.id);
+    
+    // Try to find an existing record by UUID first, if no sqliteId is given
+    if (!ebook.sqliteId && ebook.id) {
+       const existingByUuid = await this.db.get<SqliteEbookRecord>(
+           "SELECT * FROM pdf_metadata WHERE uuid = ?",
+           ebook.id
+       );
+       if (existingByUuid) {
+           ebook.sqliteId = existingByUuid.id; // Found it, set sqliteId for update path
+       }
+    }
+
+    if (ebook.sqliteId) {
+      // Update existing record using sqliteId
+      // getById expects string for sqliteId
+      const existingRecord = await this.getById(ebook.sqliteId.toString()); 
       if (!existingRecord) {
-        throw new Error(`Ebook with id ${ebook.id} not found`);
+        // This case should ideally not be hit if sqliteId is managed correctly client-side
+        // but as a fallback, try to insert if ID not found, or throw specific error.
+        // For now, let's throw, assuming client should only send valid sqliteIds for updates.
+        throw new Error(`Ebook with sqliteId ${ebook.sqliteId} not found for update.`);
       }
       await this.db.run(
         `UPDATE pdf_metadata SET 
-          filename = ?, title = ?, author = ?, creator = ?, producer = ?, 
+          uuid = ?, filename = ?, title = ?, author = ?, creator = ?, producer = ?, 
           creationDate = ?, modificationDate = ?, subject = ?, keywords = ?, pages = ?
         WHERE id = ?`,
+        recordData.uuid, // Use ebook.id mapped to recordData.uuid
         recordData.filename,
         recordData.title,
         recordData.author,
@@ -193,15 +217,21 @@ class SqliteEbookRepository implements EbookRepository {
         recordData.subject,
         recordData.keywords,
         recordData.pages,
-        ebook.id
+        ebook.sqliteId // Use sqliteId for WHERE clause
       );
-      return { ...ebook }; // Return the updated ebook
+      // Fetch the updated record to ensure all fields are current
+      const updatedRecord = await this.getById(ebook.sqliteId.toString());
+      if (!updatedRecord) throw new Error("Failed to fetch updated record."); // Should not happen
+      return updatedRecord;
+
     } else {
       // Insert new record
+      // The 'uuid' field comes from recordData.uuid (which is ebook.id)
       const result = await this.db.run(
         `INSERT INTO pdf_metadata (
-          filename, title, author, creator, producer, creationDate, modificationDate, subject, keywords, pages
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          uuid, filename, title, author, creator, producer, creationDate, modificationDate, subject, keywords, pages
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        recordData.uuid, 
         recordData.filename,
         recordData.title,
         recordData.author,
@@ -214,15 +244,14 @@ class SqliteEbookRepository implements EbookRepository {
         recordData.pages
       );
       if (result.lastID === undefined) {
-        throw new Error("Failed to save ebook, no ID returned.");
+        throw new Error("Failed to save ebook, no ID returned from SQLite.");
       }
-      // Fetch the newly inserted record to get all fields (like uploadedAt)
+      // Fetch the newly inserted record to get all fields (like sqliteId and uploadedAt)
       const newRecord = await this.getById(result.lastID.toString());
       if (!newRecord) {
-        // This should ideally not happen if the insert was successful
-        throw new Error("Failed to retrieve new ebook after saving.");
+        throw new Error("Failed to retrieve new ebook after saving to SQLite.");
       }
-      return newRecord;
+      return newRecord; // This Ebook object will have sqliteId and the original uuid as id
     }
   }
 

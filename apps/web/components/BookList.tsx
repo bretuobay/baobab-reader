@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { ebookRepository } from '../lib/indexedDB';
+import { ebookRepository, attemptSyncBook } from '../lib/indexedDB';
 // Adjust this path if Ebook type is moved to a shared location
 import { type Ebook } from '../server/db'; 
 import BookItem from './BookItem';
@@ -22,6 +22,22 @@ const BookList: React.FC<BookListProps> = ({ onEditBook, refreshKey }) => {
     try {
       const allBooks = await ebookRepository.getAll();
       setBooks(allBooks);
+
+      // After setting books, iterate and attempt sync for appropriate ones
+      if (allBooks && allBooks.length > 0) {
+        console.log("Checking for books to sync on load...");
+        for (const book of allBooks) {
+          if (!book.syncStatus || book.syncStatus === 'pending' || book.syncStatus === 'error') {
+            // Don't await here to avoid blocking UI updates if many books need syncing.
+            // Errors are handled within attemptSyncBook.
+            if (book.id) { // Ensure book.id is present
+               attemptSyncBook(book.id).catch(err => {
+                   console.error(`Error triggering initial sync for book ${book.id}:`, err);
+               });
+            }
+          }
+        }
+      }
     } catch (err) {
       console.error("Error fetching books:", err);
       setError(err instanceof Error ? err.message : "Failed to fetch books.");
