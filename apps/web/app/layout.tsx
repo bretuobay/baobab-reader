@@ -14,8 +14,8 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Web App with Material UI", // Updated title
-  description: "A Next.js app using Material UI and tRPC", // Updated description
+  title: "Baobab Reader",
+  description: "PDF ebook manager and reader",
 };
 
 export default function RootLayout({
@@ -26,7 +26,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
-        <ThemeRegistry> {/* Wrap TrpcProvider (and thus children) with ThemeRegistry */}
+        <ThemeRegistry>
+          {" "}
+          {/* Wrap TrpcProvider (and thus children) with ThemeRegistry */}
           <TrpcProvider>{children}</TrpcProvider>
         </ThemeRegistry>
       </body>
