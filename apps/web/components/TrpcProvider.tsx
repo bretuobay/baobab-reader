@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import React, { useState } from "react";
 
-import { trpc } from "../utils/trpc"; // This path needs to be correct
+import { api } from "../utils/trpc"; // This path needs to be correct
 
 export default function TrpcProvider({
   children,
@@ -13,7 +13,7 @@ export default function TrpcProvider({
 }) {
   const [queryClient] = useState(() => new QueryClient());
   const [trpcClient] = useState(() =>
-    trpc.createClient({
+    api.createClient({
       links: [
         httpBatchLink({
           url: "/api/trpc", // Adjust if your tRPC API endpoint is different
@@ -22,8 +22,8 @@ export default function TrpcProvider({
     })
   );
   return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+    <api.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </trpc.Provider>
+    </api.Provider>
   );
 }
