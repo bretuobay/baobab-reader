@@ -1,14 +1,14 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { ebookRepository, attemptSyncBook } from '../lib/indexedDB';
+import React, { useEffect, useState, useCallback } from "react";
+import { ebookRepository, attemptSyncBook } from "../lib/indexedDB";
 // Adjust this path if Ebook type is moved to a shared location
-import { type Ebook } from '../server/db'; 
-import BookItem from './BookItem';
+import { type Ebook } from "../server/db";
+import BookItem from "./BookItem";
 
 interface BookListProps {
   // Function to call when edit is requested, passing the book to edit
-  onEditBook: (book: Ebook) => void; 
+  onEditBook: (book: Ebook) => void;
   // A "refresh key" prop to trigger re-fetching when a book is saved elsewhere
-  refreshKey?: number; 
+  refreshKey?: number;
 }
 
 const BookList: React.FC<BookListProps> = ({ onEditBook, refreshKey }) => {
@@ -27,13 +27,21 @@ const BookList: React.FC<BookListProps> = ({ onEditBook, refreshKey }) => {
       if (allBooks && allBooks.length > 0) {
         console.log("Checking for books to sync on load...");
         for (const book of allBooks) {
-          if (!book.syncStatus || book.syncStatus === 'pending' || book.syncStatus === 'error') {
+          if (
+            !book.syncStatus ||
+            book.syncStatus === "pending" ||
+            book.syncStatus === "error"
+          ) {
             // Don't await here to avoid blocking UI updates if many books need syncing.
             // Errors are handled within attemptSyncBook.
-            if (book.id) { // Ensure book.id is present
-               attemptSyncBook(book.id).catch(err => {
-                   console.error(`Error triggering initial sync for book ${book.id}:`, err);
-               });
+            if (book.id) {
+              // Ensure book.id is present
+              attemptSyncBook(book.id).catch((err) => {
+                console.error(
+                  `Error triggering initial sync for book ${book.id}:`,
+                  err
+                );
+              });
             }
           }
         }
@@ -51,7 +59,7 @@ const BookList: React.FC<BookListProps> = ({ onEditBook, refreshKey }) => {
   }, [fetchBooks, refreshKey]); // Re-fetch when refreshKey changes
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this ebook?')) {
+    if (window.confirm("Are you sure you want to delete this ebook?")) {
       try {
         await ebookRepository.delete(id);
         fetchBooks(); // Refresh list after deletion
@@ -67,7 +75,7 @@ const BookList: React.FC<BookListProps> = ({ onEditBook, refreshKey }) => {
   }
 
   if (error) {
-    return <p style={{ color: 'red' }}>Error: {error}</p>;
+    return <p style={{ color: "red" }}>Error: {error}</p>;
   }
 
   if (books.length === 0) {
@@ -77,7 +85,7 @@ const BookList: React.FC<BookListProps> = ({ onEditBook, refreshKey }) => {
   return (
     <div>
       <h2>My Books (IndexedDB)</h2>
-      {books.map(book => (
+      {books.map((book) => (
         <BookItem
           key={book.id}
           book={book}
